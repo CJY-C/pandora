@@ -4,7 +4,7 @@ import logging
 from datetime import timedelta
 from os.path import join, abspath, dirname
 
-from flask import Flask, jsonify, make_response, request, Response, render_template
+from flask import Flask, jsonify, make_response, request, Response, render_template,stream_with_context
 from flask_cors import CORS
 from waitress import serve
 from werkzeug.exceptions import default_exceptions
@@ -14,6 +14,8 @@ from werkzeug.serving import WSGIRequestHandler
 from .. import __version__
 from ..exts.hooks import hook_logging
 from ..openai.api import API
+import uuid
+import json
 
 
 class ChatBot:
@@ -22,6 +24,7 @@ class ChatBot:
 
     def __init__(self, chatgpt, debug=False, sentry=False):
         self.chatgpt = chatgpt
+        self._app = None
         self.debug = debug
         self.sentry = sentry
         self.log_level = logging.DEBUG if debug else logging.WARN
@@ -71,6 +74,12 @@ class ChatBot:
         app.route('/')(self.chat)
         app.route('/chat')(self.chat)
         app.route('/chat/<conversation_id>')(self.chat)
+        
+        app.route('/v1/chat/completions', methods=['POST'])(self._openai2)
+        
+        
+        self._app = app
+        
 
         if not self.debug:
             self.logger.warning('Serving on http://{}:{}'.format(host, port))
@@ -126,6 +135,8 @@ class ChatBot:
             self.__set_cookie(resp, token_key, timedelta(days=30))
 
         return resp
+
+    
 
     @staticmethod
     def session():
@@ -284,3 +295,46 @@ class ChatBot:
         resp.status_code = remote_resp.status_code
 
         return resp
+
+
+
+    def _openai2(self):
+        def generate(res):
+            # res 文本回复, 本函数是转流格式回复
+            for xx in res:
+                x2x_json = {"choices":[{"delta":{"content":xx}}]}
+                x3x_str = json.dumps(x2x_json)
+                x4x_str = f"data: {x3x_str}\n\n"
+                x5x_byte = x4x_str.encode('utf-8')
+                yield x5x_byte
+
+        messages = request.json.get("messages",'')
+        #print(messages) # chatgpt应用端发送的 消息，含历史上下文和问题。
+
+        txt = '' #整理后的上下文和问题
+        for i in messages:
+            txt = txt + f"{i.get('role')}:{i.get('content')}\n\n"
+        with self._app.app_context():
+            #res = self._open_ask(txt,False) # 不自动删除网页产生并显示的会话
+            res = self._open_ask(txt) # 自动删除网页产生并显示的会话
+            return Response(stream_with_context(generate(res)),mimetype='text/event-stream') # 原始全文字符串回复转为stream 格式返回给应用
+
+    def _open_ask(self,txt,del_talk = True,model='text-davinci-002-render-sha'):
+        # text-davinci-002-render-sha 似乎就是GPT3.5
+        prompt = txt
+        message_id = str(uuid.uuid4())
+        parent_message_id = str(uuid.uuid4())
+        conversation_id = None
+        stream = False  #流请求，返回的格式不符合应用端使用。到'官方'不用流，到应用端用流。
+
+        req = self.__process_stream(
+            *self.chatgpt.talk(prompt, model, message_id, parent_message_id, conversation_id, stream,
+                               self.__get_token_key()), stream)
+        res = json.loads(req.get_data())
+        #print(res)
+        conversation_id = res.get('conversation_id')
+        res_content = res.get('message').get('content').get('parts')[0]
+        if del_talk:
+            self.del_conversation(conversation_id)
+        return res_content #单次完整全文回复
+        
