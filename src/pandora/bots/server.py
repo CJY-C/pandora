@@ -140,8 +140,7 @@ class ChatBot:
         # 换个界面  https://github.com/xqdoo00o/chatgpt-web
         rendered = render_template('chatgpt-web.html',
                                    pandora_base=request.url_root.strip('/'),
-                                   pandora_sentry=self.sentry,
-                                   query=query
+                                   pandora_sentry=self.sentry
                                    )
         resp = make_response(rendered)
         return resp
