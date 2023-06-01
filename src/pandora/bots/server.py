@@ -334,6 +334,8 @@ class ChatBot:
         #print(res)
         conversation_id = res.get('conversation_id')
         res_content = res.get('message').get('content').get('parts')[0]
+        if res_content.startswith('assistant:'):
+            res_content = res_content[10:] #不要开头的assistant:部分文字
         if del_talk:
             self.del_conversation(conversation_id)
         return res_content #单次完整全文回复
