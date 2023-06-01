@@ -71,7 +71,7 @@ class ChatBot:
         app.route('/api/accounts/check')(self.check)
         app.route('/_next/data/olf4sv64FWIcQ_zCGl90t/chat.json')(self.chat_info)
 
-        app.route('/')(self.chat)
+        app.route('/')(self.chat_demo)
         app.route('/chat')(self.chat)
         app.route('/chat/<conversation_id>')(self.chat)
         
@@ -135,8 +135,17 @@ class ChatBot:
             self.__set_cookie(resp, token_key, timedelta(days=30))
 
         return resp
-
     
+    def chat_demo(self):
+        # 换个界面  https://github.com/xqdoo00o/chatgpt-web
+        rendered = render_template('chatgpt-web.html',
+                                   pandora_base=request.url_root.strip('/'),
+                                   pandora_sentry=self.sentry,
+                                   query=query
+                                   )
+        resp = make_response(rendered)
+        return resp
+        
 
     @staticmethod
     def session():
