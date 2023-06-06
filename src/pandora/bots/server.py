@@ -73,6 +73,8 @@ class ChatBot:
 
         app.route('/')(self.chat_demo)
         app.route('/chat')(self.chat)
+        app.route('/voice')(self.voice)
+        
         app.route('/chat/<conversation_id>')(self.chat)
         
         app.route('/v1/chat/completions', methods=['POST'])(self._openai2)
@@ -135,6 +137,15 @@ class ChatBot:
             self.__set_cookie(resp, token_key, timedelta(days=30))
 
         return resp
+    def voice(self):
+        # +语音     https://github.com/possible318/pandora/tree/voice2text
+         rendered = render_template('voice.html',
+                                   pandora_base=request.url_root.strip('/'),
+                                   pandora_sentry=self.sentry
+                                   )
+        resp = make_response(rendered)
+        return resp
+    
     
     def chat_demo(self):
         # 换个界面  https://github.com/xqdoo00o/chatgpt-web
@@ -144,7 +155,8 @@ class ChatBot:
                                    )
         resp = make_response(rendered)
         return resp
-        
+    
+
 
     @staticmethod
     def session():
