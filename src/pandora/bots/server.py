@@ -3,6 +3,7 @@
 import logging
 from datetime import timedelta
 from os.path import join, abspath, dirname
+import time
 
 from flask import Flask, jsonify, make_response, request, Response, render_template,stream_with_context
 from flask_cors import CORS
@@ -17,6 +18,9 @@ from ..openai.api import API
 import uuid
 import json
 
+import tiktoken
+encoding = tiktoken.get_encoding("cl100k_base")
+encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
 
 class ChatBot:
     __default_ip = '127.0.0.1'
@@ -325,7 +329,28 @@ class ChatBot:
         with self._app.app_context():
             #res = self._open_ask(txt,False) # 不自动删除网页产生并显示的会话
             res = self._open_ask(txt) # 自动删除网页产生并显示的会话
-            return Response(stream_with_context(generate(res)),mimetype='text/event-stream') # 原始全文字符串回复转为stream 格式返回给应用
+            txt_tokens = len(encoding.encode(txt))
+            res_tokens = len(encoding.encode(res))
+            fake_openai_ob = {
+                'id': 'chatcmpl-' + str(uuid.uuid4()),
+                'object': 'chat.instruction',
+                'created': int(time.time()),
+                'model': 'text-davinci-002-render-sha',
+                'usage': {'prompt_tokens': txt_tokens, 'completion_tokens': res_tokens, 'total_tokens': txt_tokens + res_tokens},
+                'choices':[
+                    {
+                        'message':{
+                            'role': 'assistant',
+                            'content': res,
+                            'finish_reason': 'stop', # TODO: 结束原因: 1. stop 2. expired 3. max_tokens
+                            'index': 0
+                        }
+                    }
+                ]
+            }
+            return jsonify(fake_openai_ob)
+            # return res
+            # return Response(stream_with_context(generate(res)),mimetype='text/event-stream') # 原始全文字符串回复转为stream 格式返回给应用
 
     def _open_ask(self,txt,del_talk = True,model='text-davinci-002-render-sha'):
         # text-davinci-002-render-sha 似乎就是GPT3.5
