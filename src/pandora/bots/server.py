@@ -139,7 +139,7 @@ class ChatBot:
         return resp
     def voice(self):
         # +语音     https://github.com/possible318/pandora/tree/voice2text
-         rendered = render_template('voice.html',
+        rendered = render_template('voice.html',
                                    pandora_base=request.url_root.strip('/'),
                                    pandora_sentry=self.sentry
                                    )
