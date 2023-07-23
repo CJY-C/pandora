@@ -75,7 +75,8 @@ class ChatBot:
         app.route('/api/accounts/check')(self.check)
         app.route('/_next/data/olf4sv64FWIcQ_zCGl90t/chat.json')(self.chat_info)
 
-        app.route('/')(self.chat_demo)
+        # app.route('/')(self.chat_demo)
+        app.route('/')(self.chat)
         app.route('/chat')(self.chat)
         app.route('/chat/<conversation_id>')(self.chat)
         
@@ -311,16 +312,43 @@ class ChatBot:
 
 
     def _openai2(self):
+        unique_id = 'chatcmpl-' + str(uuid.uuid4())
+        object_name = 'chat.comletion'
+        created_time = int(time.time())
+        model = request.json.get("model", "gpt-3.5-turbo")
         def generate(res):
             # res 文本回复, 本函数是转流格式回复
-            for xx in res:
-                x2x_json = {"choices":[{"delta":{"content":xx}}]}
-                x3x_str = json.dumps(x2x_json)
-                x4x_str = f"data: {x3x_str}\n\n"
-                x5x_byte = x4x_str.encode('utf-8')
-                yield x5x_byte
+            res_len = len(res)
+            for xx in range(res_len + 1):
+                data = {
+                    "id": unique_id,
+                    "object": f'{object_name}.chunk',
+                    "created": created_time,
+                    "model": model,
+                    "choices": [
+                        {
+                            "delta": {"content": res[xx]} if xx != res_len else {},
+                            "index": 0,
+                            "finish_reason": None if xx != res_len else "stop"
+                        }
+                    ]
+                }
+                # x2x_json = {"choices":[{"delta":{"content":xx}}]}
+                # x3x_str = json.dumps(x2x_json)
+                # x4x_str = f"data: {x3x_str}\n\n"
+                # x5x_byte = x4x_str.encode('utf-8')
+                # yield x5x_byte
+                data_str = json.dumps(data)
+                data_pro = f'data: {data_str}\n\n'
+                data_byte = data_pro.encode('utf-8')
+                yield data_byte
+            finish = 'data: [DONE]\n\n'
+            finish_byte = finish.encode('utf-8')
+            yield finish_byte
+                            
 
         messages = request.json.get("messages",'')
+        stream = request.json.get("stream", False) # 默认关闭流模式
         #print(messages) # chatgpt应用端发送的 消息，含历史上下文和问题。
 
         txt = '' #整理后的上下文和问题
@@ -328,14 +356,14 @@ class ChatBot:
             txt = txt + f"{i.get('role')}:{i.get('content')}\n\n"
         with self._app.app_context():
             #res = self._open_ask(txt,False) # 不自动删除网页产生并显示的会话
-            res = self._open_ask(txt) # 自动删除网页产生并显示的会话
+            res = self._open_ask(txt, model=model) # 自动删除网页产生并显示的会话
             txt_tokens = len(encoding.encode(txt))
             res_tokens = len(encoding.encode(res))
             fake_openai_ob = {
-                'id': 'chatcmpl-' + str(uuid.uuid4()),
-                'object': 'chat.instruction',
-                'created': int(time.time()),
-                'model': 'text-davinci-002-render-sha',
+                'id': unique_id,
+                'object': object_name,
+                'created': created_time,
+                'model': model,
                 'usage': {'prompt_tokens': txt_tokens, 'completion_tokens': res_tokens, 'total_tokens': txt_tokens + res_tokens},
                 'choices':[
                     {
@@ -348,9 +376,11 @@ class ChatBot:
                     }
                 ]
             }
-            return jsonify(fake_openai_ob)
+
+            if not stream:
+                return jsonify(fake_openai_ob)
             # return res
-            # return Response(stream_with_context(generate(res)),mimetype='text/event-stream') # 原始全文字符串回复转为stream 格式返回给应用
+            return Response(stream_with_context(generate(res)),mimetype='text/event-stream') # 原始全文字符串回复转为stream 格式返回给应用
 
     def _open_ask(self,txt,del_talk = True,model='text-davinci-002-render-sha'):
         # text-davinci-002-render-sha 似乎就是GPT3.5
@@ -364,9 +394,15 @@ class ChatBot:
             *self.chatgpt.talk(prompt, model, message_id, parent_message_id, conversation_id, stream,
                                self.__get_token_key()), stream)
         res = json.loads(req.get_data())
-        #print(res)
+        # print(res)
         conversation_id = res.get('conversation_id')
-        res_content = res.get('message').get('content').get('parts')[0]
+        message_id = res.get('message_id', False)
+        print(message_id)
+        if not message_id:
+            return f"Sorry for that, but you should wait for fakeopen to fix the problem before you can keep using the {model} model!"
+        respond = json.loads(self.get_conversation(conversation_id).get_data())
+        # res_content = res.get('message').get('content').get('parts')[0]
+        res_content = respond.get('mapping').get(message_id).get('message').get('content').get('parts')[0]
         if res_content.startswith('assistant:'):
             res_content = res_content[10:] #不要开头的assistant:部分文字
         if del_talk:
